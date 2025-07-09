@@ -87,7 +87,7 @@ if __name__ == '__main__':
         options = Options()
         options.add_argument("-profile")
         options.add_argument(FIREFOX_PROFILE_PATH)
-        Service = Service(executable_path = GECKODRIVER_PATH)
+        service = Service(executable_path = GECKODRIVER_PATH)
 
         try:
             logger.info("initializing firefox driver")
@@ -97,7 +97,7 @@ if __name__ == '__main__':
             translator = BingTranslator(driver,logger)
             result = translator.bing(content_to_translate)
 
-            with open('result.txt,"w",encoding = "utf-8') as f:
+            with open('result.txt',"w",encoding = "utf-8") as f:
                 f.write(result)
             logger.info("result saved to result.txt")
         except Exception as e:

@@ -1,0 +1,34 @@
+manga-translator/
+├── Documents/                      # Maintained by N //contains all the detailed explanations of files 
+│   └── file_structure.txt
+├── OCR/                            # Maintained by N // everything about the OCR
+│   └── coordinate_extractor.py
+├── Input/                          
+├── output/
+│   └── ...
+├── Translate/                      # Maintained by HP and N    // web-scraping and api based translation 
+│   ├── API_request/                # Maintained by HP          // api based translation
+│   │   └── api.js
+│   ├── firefox_scripts/            # Maintained by N           // web-scraping translation for firefox
+│   │   ├── baidu.py
+│   │   ├── bing.py
+│   │   ├── caiyun.py
+│   │   ├── deepl.py
+│   │   ├── tencent.py
+│   │   ├── xiaoniu.py
+│   │   └── youdao.py
+│   └── chrome_scripts/             # Maintained by N           // web-scraping translation for chrome
+├── TextOverlay/                    # Maintained by AA
+│   ├── textoverlay.py
+│   └── textoverlay2.py
+├── FrontEnd/                       # Maintained by HH
+│   └── ...
+├── DataBase/                       # Maintained by AA
+│   └── ...
+├── RealTime/                       # Maintained by HH
+│   ├── file.cpp
+│   ├── textoverlay.py
+│   Automated_installation/         # Maintained by HH,AA,N
+├── README.md
+├── CODE_OF_CONDUCT.md
+└── CONTRIBUTING.md
