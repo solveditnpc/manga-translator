@@ -1,5 +1,6 @@
 import time
-import json 
+import json
+import os 
 import logging 
 from traceback import format_exc
 from selenium import webdriver
@@ -101,8 +102,12 @@ class BingTranslator:
             self.logger.error(format_exc())
             return "failed"
         
-def load_config(file_path='/home/human-human/python/manga-translator/config.json'):
-    with open(file_path, 'r') as f:
+def load_config():
+    # Construct the path to config.json relative to the script's location
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, '..', '..', 'config.json')
+    
+    with open(config_path, 'r') as f:
         config = json.load(f)
     return config
 
