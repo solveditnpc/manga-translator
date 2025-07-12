@@ -17,7 +17,7 @@ MAX_SIDE_LIMIT = 4000
 # Create output directory if it doesn't exist
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Initialize PaddleOCR as per the user's original, working configuration
+# Initialize PaddleOCR
 ocr = PaddleOCR(
     use_doc_orientation_classify=False, 
     use_doc_unwarping=False, 
@@ -54,11 +54,15 @@ def process_image(image_path):
         json_output_path = output_dir / "ocr_result.json"
         result[0].save_to_json(str(json_output_path))
         print(f"  - Saved JSON results to {json_output_path}")
+
+        # Save the processed image(s) to the output directory
+        result[0].save_to_img(str(output_dir))
+        print(f"  - Saved processed image(s) to {output_dir}")
     else:
         print(f"  - No text found in {image_path.name}.")
 
 def process_pdf(pdf_path):
-    """Converts a PDF to images, resizes if necessary, and runs OCR on each page in memory."""
+    """Converts a PDF to images, saves them, resizes if necessary, and runs OCR on each page."""
     print(f"Processing {pdf_path.name}...")
     pdf_output_dir = OUTPUT_DIR / pdf_path.stem
     pdf_output_dir.mkdir(exist_ok=True)
@@ -67,14 +71,23 @@ def process_pdf(pdf_path):
         images = convert_from_path(str(pdf_path))
     except PDFInfoNotInstalledError:
         print("Error: Poppler is not installed or not in your PATH.")
-        print("Please install Poppler and try again.")
+        print("Please install")
         return
 
     for i, image in enumerate(images):
         page_num = i + 1
         print(f"  - Processing page {page_num}...")
 
-        cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        page_result_dir = pdf_output_dir / f"page_{page_num}_results"
+        page_result_dir.mkdir(exist_ok=True)
+
+        # Save the image from the PDF page
+        image_path = page_result_dir / f"page_{page_num}.png"
+        image.save(image_path, "PNG")
+        print(f"    - Saved page image to {image_path}")
+
+        # Read the saved image for processing
+        cv_image = cv2.imread(str(image_path))
         h, w, _ = cv_image.shape
         image_to_process = cv_image
 
@@ -91,11 +104,13 @@ def process_pdf(pdf_path):
         result = ocr.predict(image_to_process)
 
         if result and result[0]:
-            page_result_dir = pdf_output_dir / f"page_{page_num}_results"
-            page_result_dir.mkdir(exist_ok=True)
             json_output_path = page_result_dir / "ocr_result.json"
             result[0].save_to_json(str(json_output_path))
             print(f"    - Saved JSON results to {json_output_path}")
+
+            # Save the processed image(s) to the page result directory
+            result[0].save_to_img(str(page_result_dir))
+            print(f"    - Saved processed image(s) to {page_result_dir}")
         else:
             print(f"    - No text found on page {page_num}.")
 
