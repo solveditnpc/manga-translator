@@ -8,8 +8,11 @@ from pdf2image.exceptions import PDFInfoNotInstalledError
 from docx import Document
 from docx2pdf import convert
 
-INPUT_DIR = Path("input")
-OUTPUT_DIR = Path("output")
+# Get the directory of the script
+SCRIPT_DIR = Path(__file__).resolve().parent
+# Set the input and output directories relative to the project root
+INPUT_DIR = SCRIPT_DIR.parent / "input"
+OUTPUT_DIR = SCRIPT_DIR.parent / "output"
 
 # Define max side limit from the warning message
 MAX_SIDE_LIMIT = 4000

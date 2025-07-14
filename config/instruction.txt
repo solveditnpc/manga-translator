@@ -1,0 +1,1 @@
+it is recommended to run download_firefox_driver.py file to download the geckodriver everytime you update your firefox 
