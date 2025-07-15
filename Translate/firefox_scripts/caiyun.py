@@ -1,4 +1,6 @@
 import time
+import json
+import os
 import logging
 from traceback import format_exc
 from selenium import webdriver
@@ -14,7 +16,7 @@ class CaiyunTranslator:
         self.browser = browser
         self.logger = logger
         self.content = ""
-        self.url = "https://fanyi.caiyunapp.com/#/"
+        self.url = "https://fanyi.caiyunapp.com/"
 
     def caiyun(self, content):
         """
@@ -62,10 +64,19 @@ class CaiyunTranslator:
             self.logger.error(format_exc())
             return "failed"
 
+def load_config():
+    # Construct the path to config.json 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, '..', '..', 'config.json')
+    
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    return config
+
 if __name__ == '__main__':
-    # broswer config
-    GECKODRIVER_PATH = ''
-    FIREFOX_PROFILE_PATH = ''
+    config = load_config()
+    GECKODRIVER_PATH = config.get('GECKODRIVER_PATH')
+    FIREFOX_PROFILE_PATH = config.get('FIREFOX_PROFILE_PATH')
 
     #setup basic logger for testing 
     logging.basicConfig(level = logging.INFO,format= '%(asctime)s - %(levelname)s - %(message)s')
@@ -86,7 +97,7 @@ if __name__ == '__main__':
         options = Options()
         options.add_argument("-profile")
         options.add_argument(FIREFOX_PROFILE_PATH)
-        Service = Service(executable_path = GECKODRIVER_PATH)
+        service = Service(executable_path = GECKODRIVER_PATH)
 
         try:
             logger.info("initializing firefox driver")
@@ -96,7 +107,7 @@ if __name__ == '__main__':
             translator = CaiyunTranslator(driver,logger)
             result = translator.caiyun(content_to_translate)
 
-            with open('result.txt,"w",encoding = "utf-8') as f:
+            with open('result.txt',"w",encoding = "utf-8") as f:
                 f.write(result)
             logger.info("result saved to result.txt")
         except Exception as e:
