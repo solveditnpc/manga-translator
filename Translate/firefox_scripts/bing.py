@@ -11,7 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-LANGUAGES = {
+BING_LANGUAGES = {
         "af": "Afrikaans", "am": "Amharic", "ar": "Arabic", "as": "Assamese", "az": "Azerbaijani",
         "ba": "Bashkir", "be": "Belarusian", "bg": "Bulgarian", "bho": "Bhojpuri", "bn": "Bangla",
         "bo": "Tibetan", "brx": "Bodo", "bs": "Bosnian", "ca": "Catalan", "cs": "Czech",
@@ -47,13 +47,15 @@ LANGUAGES = {
     }
 
 class BingTranslator:
-    def __init__(self, browser, logger, to_lan):
+    def __init__(self, browser, logger, to_lan, from_lan='auto'):
         self.browser = browser
-        self.logger = logger 
+        self.logger = logger
         self.content = ""   # store the translations for future database implementation
-        if to_lan not in LANGUAGES:
-            raise ValueError(f"Invalid language: {to_lan}")
-        self.url = f"https://www.bing.com/translator?to={to_lan}"
+        if to_lan not in BING_LANGUAGES:
+            raise ValueError(f"Invalid 'to' language: {to_lan}")
+        if from_lan != 'auto' and from_lan not in BING_LANGUAGES:
+            raise ValueError(f"Invalid 'from' language: {from_lan}")
+        self.url = f"https://www.bing.com/translator?from={from_lan}&to={to_lan}"
 
     def bing(self,content):
         '''
@@ -103,7 +105,6 @@ class BingTranslator:
             return "failed"
         
 def load_config():
-    # Construct the path to config.json relative to the script's location
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(script_dir, '..', '..', 'config.json')
     
@@ -116,12 +117,11 @@ if __name__ == '__main__':
     GECKODRIVER_PATH = config.get('GECKODRIVER_PATH')
     FIREFOX_PROFILE_PATH = config.get('FIREFOX_PROFILE_PATH')
     to_lan = config.get('to_lan', 'en')
+    from_lan = config.get('from_lan', 'auto')
 
-    #setup basic logger for testing 
     logging.basicConfig(level = logging.INFO,format= '%(asctime)s - %(levelname)s - %(message)s')
     logger = logging.getLogger(__name__)
 
-    # read content
     try:
         with open('content.txt', "r",encoding = 'utf-8') as f:
             content_to_translate = f.read()
@@ -143,7 +143,7 @@ if __name__ == '__main__':
             driver = webdriver.Firefox(service = service,options = options)
             logger.info("driver initialized")
 
-            translator = BingTranslator(driver,logger, to_lan=to_lan)
+            translator = BingTranslator(driver, logger, to_lan=to_lan, from_lan=from_lan)
             result = translator.bing(content_to_translate)
 
             with open('result.txt',"w",encoding = "utf-8") as f:
