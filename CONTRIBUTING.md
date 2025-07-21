@@ -9,6 +9,7 @@ Thank you for your interest in contributing to this project! We welcome contribu
 3. Create a new branch: `git checkout -b feature/your-feature-name`
 4. Make your changes
 5. Make a request to merge with the **main branch** of the manga-translator repository 
+6. If your chnges are a complete rework of a file or a series of connected files consider pushing to **your-new-feature-name** branch.
 
 ## Making Changes
 
