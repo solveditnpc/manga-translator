@@ -1,0 +1,95 @@
+# OCR Processing Pipeline Documentation
+
+**Important Note: Image Dimensions and Coordinates**
+- The OCR model works with images of the same dimensions as the original page image (e.g., `page_1.png`) in the page results folder.
+- All text coordinates in the OCR results are relative to these original image dimensions(abcd  X  pqrs).
+- This means that if you resize the image later, the coordinates will need to be adjusted accordingly.
+- DO NOT BINARIZE THE IMAGE BEFORE PASSING IT TO THE OCR MODEL.
+
+This document provides a detailed explanation of the OCR (Optical Character Recognition) script (`coordinate_extractor.py`), its configuration, and its limitations.
+
+## 1. How the OCR Script Works (`coordinate_extractor.py`)
+
+The script is designed to process various document types (PDF, images, DOCX), extract text and its coordinates, and save the results in a structured format.
+
+### Execution Flow
+
+1.  **Initialization**:
+    *   The script first loads all necessary settings from the main `config.json` file located in the project's root directory.
+    *   It initializes the PaddleOCR engine with the parameters specified in `config.json`. This is done only once to avoid reloading the model for each file.
+
+2.  **Input Processing**:
+    *   The script scans the `input/` directory for any supported files (`.pdf`, `.png`, `.jpg`, `.jpeg`, `.docx`).
+    *   It processes each file one by one based on its type.
+
+3.  **PDF Processing (`process_pdf`)**:
+    *   **Memory-Efficient Design**: To handle very large PDF files without crashing, the script processes them one page at a time.
+    *   **Page Count**: It first determines the total number of pages in the PDF without loading the entire file into memory.
+    *   **Page-by-Page Loop**: The script then loops through each page number. In each iteration, it:
+        1.  Converts only the **current page** into a high-resolution (300 DPI) PNG image.
+        2.  Saves this image to a dedicated results folder (e.g., `output/your_pdf_name/page_1_results/`).
+        3.  Calls the core OCR function to process this single image.
+    *   **Resumable**: The script has two levels of resumable processing:
+        *   **Image Extraction**: If a page image already exists in the output directory, it will be skipped.
+        *   **OCR Analysis**: If OCR results (JSON file) already exist for a page, the OCR process will be skipped.
+        *   This means that if the script is stopped and restarted, it will automatically skip both the image conversion and OCR analysis for pages that have already been processed, saving significant time and processing power.
+
+4.  **Image Processing (`process_image`)**:
+    *   For single image files (PNG, JPG), the script simply loads the image and passes it directly to the core OCR function.
+
+5.  **DOCX Processing (`process_docx`)**:
+    *   The script first converts the `.docx` file into a temporary `.pdf` file.
+    *   It then processes this new PDF using the same memory-efficient, page-by-page method described above.
+
+6.  **Core OCR Function (`run_ocr_and_save_results`)**:
+    *   This is the central function where the actual OCR happens.
+    *   It takes an image, runs the PaddleOCR `predict` method on it, and handles the output.
+    *   **JSON Output**: It saves the detailed OCR results (text, coordinates, confidence scores) into a `.json` file (e.g., `page_1.json`).
+    *   **Visualization Output**: It also saves visualization images showing the detected text boxes overlaid on the original page, which are useful for debugging.
+
+### Output Structure
+
+For each input file, the script creates a main folder in the `output/` directory. Inside this folder, it creates a sub-folder for each page's results:
+
+```
+output/
+└── your_document_name/
+    ├── page_1_results/
+    │   ├── page_1.json
+    │   ├── page_1.png
+    │   └── page_1_visualization_1.png
+    ├── page_2_results/
+    │   ├── page_2.json
+    │   ├── page_2.png
+    │   └── page_2_visualization_1.png
+    └── ...
+```
+
+## 2. Configuration (`config.json`)
+
+All settings are controlled via `config.json`. Here are the key OCR parameters:
+
+*   `"text_det_limit_side_len"`: **Default: 960**
+    *   **What it does**: Before detecting text, PaddleOCR resizes the image so its longest side fits this limit. 
+    *   **Trade-offs**: A smaller value (e.g., 960) is faster but may miss very small text or text near the edges of high-resolution images. A larger value (e.g., 3000) is more accurate for large images but significantly slower. This parameter was disabled for performance reasons but can be re-enabled in `coordinate_extractor.py`.
+
+*   `"use_doc_orientation_classify"`: **Default: true**
+    *   **What it does**: Enables a model that automatically detects if a page is rotated (90, 180, 270 degrees) and corrects it before OCR. 
+    *   **Recommendation**: Keep this `true` unless you are certain all your documents are perfectly upright.
+
+*   `"use_doc_unwarping"`: **Default: false**
+    *   **What it does**: Attempts to "unwarp" or flatten documents that are photographed at an angle.
+    *   **Warning**: This feature was found to cause images to shrink or distort, leading to inaccurate results. It is **strongly recommended to keep this `false`**.
+
+*   `"use_textline_orientation"`: **Default: true**
+    *   **What it does**: Enables a model that detects the orientation of individual lines of text, which is crucial for documents with mixed horizontal and vertical text (common in manga).
+    *   **Recommendation**: Keep this `true` for best results on complex layouts.
+
+## 3. Dependencies and Limitations
+
+*   **Performance**: OCR is a computationally expensive task. Processing large, high-resolution documents will take a significant amount of time. The biggest bottleneck is the OCR model's prediction step.
+
+*   **Accuracy**: OCR accuracy depends on several factors:
+    *   **Image Quality**: Clear, high-contrast, high-resolution images produce the best results.
+    *   **Text Complexity**: Stylized fonts, handwriting, or text that is very close to graphics can be difficult for the model to read accurately.
+    *   **Language**: The model is optimized for the languages it was trained on (primarily Chinese and English). While it supports others, accuracy may vary.
