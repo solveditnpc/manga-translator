@@ -1,31 +1,69 @@
-import os
 from pathlib import Path
 import cv2
-import numpy as np
 from paddleocr import PaddleOCR
-from pdf2image import convert_from_path
+from pdf2image import convert_from_path, pdfinfo_from_path
 from pdf2image.exceptions import PDFInfoNotInstalledError
-from docx import Document
 from docx2pdf import convert
+import json
 
-# Get the directory of the script
+
 SCRIPT_DIR = Path(__file__).resolve().parent
-# Set the input and output directories relative to the project root
+CONFIG_PATH = SCRIPT_DIR.parent / "config.json"
+with open(CONFIG_PATH, "r") as cf:
+    CONFIG = json.load(cf)
+
 INPUT_DIR = SCRIPT_DIR.parent / "input"
 OUTPUT_DIR = SCRIPT_DIR.parent / "output"
 
-# Define max side limit from the warning message
-MAX_SIDE_LIMIT = 4000
-
-# Create output directory if it doesn't exist
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Initialize PaddleOCR
-ocr = PaddleOCR(
-    use_doc_orientation_classify=False, 
-    use_doc_unwarping=False, 
-    use_textline_orientation=False
-)
+_ocr_param_keys = [
+    "lang",                               
+    #"text_det_limit_side_len",           #to get max performance , disable this feature
+    "use_doc_orientation_classify",      #textline orientation is enough for calculation of line angles, set to false 
+    "use_doc_unwarping",                  #add padding to the image if you want to enable this feature,it causes the image to twist along a tensor and lead to less accurate predictions , set to false
+    "use_textline_orientation",
+]
+ocr_kwargs = {k: CONFIG[k] for k in _ocr_param_keys if k in CONFIG}
+ocr = PaddleOCR(**ocr_kwargs)
+
+def run_ocr_and_save_results(image_to_process, output_dir, basename=None):
+    """Runs OCR on a given image, handles errors, and saves the results."""
+    try:
+        print("    - Running OCR...")
+        result = ocr.predict(image_to_process)
+
+        if result and result[0]:
+            # Save JSON results with a name based on the input file/page
+            json_filename = f"{basename}.json" if basename else "ocr_result.json"
+            json_output_path = output_dir / json_filename
+            result[0].save_to_json(str(json_output_path))
+            print(f"    - Saved JSON results to {json_output_path}")
+
+            # 1. Get list of files before saving images
+            files_before = set(p.name for p in output_dir.glob('*'))
+
+            # 2. Let PaddleOCR save the images with its default random names
+            result[0].save_to_img(str(output_dir))
+            print(f"    - Saved visualization(s) to {output_dir}")
+
+            # 3. Find the newly created image files
+            files_after = set(p.name for p in output_dir.glob('*'))
+            new_files = files_after - files_before
+
+            # 4. Rename the new files if a basename is provided
+            if basename:
+                new_images = sorted([f for f in new_files if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+                for i, filename in enumerate(new_images):
+                    old_path = output_dir / filename
+                    new_name = f"{basename}_visualization_{i + 1}{old_path.suffix}"
+                    new_path = output_dir / new_name
+                    old_path.rename(new_path)
+                    print(f"    - Renamed {filename} to {new_name}")
+        else:
+            print("    - No text found in image.")
+    except Exception as e:
+        print(f"    - An error occurred during OCR processing: {e}")
 
 def process_image(image_path):
     """Processes a single image file (PNG, JPG, JPEG)."""
@@ -38,31 +76,21 @@ def process_image(image_path):
         print(f"Error: Could not read image {image_path.name}")
         return
 
-    h, w, _ = cv_image.shape
-    image_to_process = cv_image
+    run_ocr_and_save_results(cv_image, output_dir, basename=image_path.stem)
 
-    if max(h, w) > MAX_SIDE_LIMIT:
-        print(f"  - Resizing image from {w}x{h} to fit within {MAX_SIDE_LIMIT}px limit.")
-        if w > h:
-            new_w = MAX_SIDE_LIMIT
-            new_h = int(h * (MAX_SIDE_LIMIT / w))
-        else:
-            new_h = MAX_SIDE_LIMIT
-            new_w = int(w * (MAX_SIDE_LIMIT / h))
-        image_to_process = cv2.resize(cv_image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-    result = ocr.predict(image_to_process)
-
-    if result and result[0]:
-        json_output_path = output_dir / "ocr_result.json"
-        result[0].save_to_json(str(json_output_path))
-        print(f"  - Saved JSON results to {json_output_path}")
-
-        # Save the processed image(s) to the output directory
-        result[0].save_to_img(str(output_dir))
-        print(f"  - Saved processed image(s) to {output_dir}")
-    else:
-        print(f"  - No text found in {image_path.name}.")
+def update_config_for_pdf(pdf_name, page_count):
+    """Updates the config.json file with active_translation_path and folder_subdirectories."""
+    try:
+        with open(CONFIG_PATH, "r+") as f:
+            config_data = json.load(f)
+            config_data["active_translation_path"] = f"/{pdf_name}"
+            config_data["folder_subdirectories"] = str(page_count)
+            f.seek(0)
+            json.dump(config_data, f, indent=4)
+            f.truncate()
+        print(f"Updated config.json: active_translation_path='/{pdf_name}', folder_subdirectories='{page_count}'")
+    except Exception as e:
+        print(f"Error updating config.json: {e}")
 
 def process_pdf(pdf_path):
     """Converts a PDF to images, saves them, resizes if necessary, and runs OCR on each page."""
@@ -71,51 +99,58 @@ def process_pdf(pdf_path):
     pdf_output_dir.mkdir(exist_ok=True)
 
     try:
-        images = convert_from_path(str(pdf_path))
+        # Get total number of pages without loading the whole file
+        pdf_info = pdfinfo_from_path(str(pdf_path))
+        page_count = pdf_info['Pages']
     except PDFInfoNotInstalledError:
-        print("Error: Poppler is not installed or not in your PATH.")
-        print("Please install")
+        print("Error: Poppler is not installed or not in PATH. Please install Poppler and try again.")
         return
 
-    for i, image in enumerate(images):
-        page_num = i + 1
-        print(f"  - Processing page {page_num}...")
+    update_config_for_pdf(pdf_path.stem, page_count)
 
+    # Process one page at a time to save memory
+    for page_num in range(1, page_count + 1):
+        print(f"  - Processing page {page_num}/{page_count}...")
+
+        # Create a directory for the page's results
         page_result_dir = pdf_output_dir / f"page_{page_num}_results"
         page_result_dir.mkdir(exist_ok=True)
 
-        # Save the image from the PDF page
+        # Convert and save only the current page
         image_path = page_result_dir / f"page_{page_num}.png"
-        image.save(image_path, "PNG")
-        print(f"    - Saved page image to {image_path}")
 
-        # Read the saved image for processing
-        cv_image = cv2.imread(str(image_path))
-        h, w, _ = cv_image.shape
-        image_to_process = cv_image
-
-        if max(h, w) > MAX_SIDE_LIMIT:
-            print(f"    - Resizing page {page_num} from {w}x{h} to fit within {MAX_SIDE_LIMIT}px limit.")
-            if w > h:
-                new_w = MAX_SIDE_LIMIT
-                new_h = int(h * (MAX_SIDE_LIMIT / w))
-            else:
-                new_h = MAX_SIDE_LIMIT
-                new_w = int(w * (MAX_SIDE_LIMIT / h))
-            image_to_process = cv2.resize(cv_image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-        result = ocr.predict(image_to_process)
-
-        if result and result[0]:
-            json_output_path = page_result_dir / "ocr_result.json"
-            result[0].save_to_json(str(json_output_path))
-            print(f"    - Saved JSON results to {json_output_path}")
-
-            # Save the processed image(s) to the page result directory
-            result[0].save_to_img(str(page_result_dir))
-            print(f"    - Saved processed image(s) to {page_result_dir}")
+        # Only convert if the image doesn't already exist
+        if not image_path.exists():
+            print("    - Converting page to image (300 DPI)...")
+            try:
+                page_image = convert_from_path(
+                    str(pdf_path),
+                    dpi=300,
+                    first_page=page_num,
+                    last_page=page_num
+                )[0]
+                page_image.save(image_path, "PNG")
+                print(f"    - Saved page image to {image_path}")
+            except Exception as e:
+                print(f"    - Error converting page {page_num}: {e}")
+                continue
         else:
-            print(f"    - No text found on page {page_num}.")
+            print(f"    - Image already exists: {image_path}")
+
+        # Check if OCR results already exist
+        json_output_path = page_result_dir / f"page_{page_num}.json"
+        if json_output_path.exists():
+            print(f"    - OCR results already exist: {json_output_path}")
+            continue
+
+        # Run OCR on the saved image
+        cv_image = cv2.imread(str(image_path))
+        if cv_image is None:
+            print(f"    - Error: Could not read image {image_path}")
+            continue
+
+        run_ocr_and_save_results(cv_image, page_result_dir, basename=f"page_{page_num}")
+
 
 def process_docx(docx_path):
     """Converts a DOCX file to PDF and then processes it."""
