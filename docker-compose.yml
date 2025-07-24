@@ -1,0 +1,5 @@
+services:
+  lang-detect:
+    build: ./language_detection_models
+    volumes:
+      - ./temp:/data

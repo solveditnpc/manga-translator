@@ -1,5 +1,14 @@
 {
+    "lang": "ch",
+    "text_det_limit_side_len": 960,
+    "use_doc_orientation_classify": true,
+    "use_doc_unwarping": false,            
+    "use_textline_orientation": true,
     "GECKODRIVER_PATH": "",
     "FIREFOX_PROFILE_PATH": "",
-    "to_lan": "de"
+    "to_lan": "en-us",
+    "from_lan": "auto",
+    "active_translation_path": "",
+    "folder_subdirectories": "",
+    "resuming_translation": "false"
 }
