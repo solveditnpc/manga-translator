@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
   lang-detect:
-    build: ./language_detect_model
+    build: ./language_detection_models
     volumes:
       - ./temp:/data
