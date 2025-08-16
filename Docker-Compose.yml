@@ -1,7 +1,0 @@
-version: '3.8'
-
-services:
-  lang-detect:
-    build: ./language_detect_model
-    volumes:
-      - ./temp:/data
