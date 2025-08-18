@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Selection Overlay</title>
+  <style>
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      background: rgba(0,0,0,0.18); /* slight dim to indicate selection mode */
+      cursor: crosshair;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #selection {
+      position: absolute;
+      border: 2px dashed #00aaff;
+      background: rgba(0,170,255,0.15);
+      display: none;
+      box-sizing: border-box;
+    }
+    #hint {
+      position: fixed;
+      left: 10px;
+      top: 10px;
+      color: white;
+      font-family: sans-serif;
+      background: rgba(0,0,0,0.4);
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div id="hint">Drag to select. Press Esc to cancel.</div>
+  <div id="selection"></div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const sel = document.getElementById('selection');
+    let startX = null, startY = null;
+    let dragging = false;
+
+    function reset() {
+      sel.style.display = 'none';
+      sel.style.width = '0px';
+      sel.style.height = '0px';
+      sel.style.left = '0px';
+      sel.style.top = '0px';
+      startX = startY = null;
+      dragging = false;
+    }
+
+    document.addEventListener('mousedown', (e) => {
+      // left button only
+      if (e.button !== 0) return;
+      dragging = true;
+      startX = e.pageX;
+      startY = e.pageY;
+      sel.style.left = startX + 'px';
+      sel.style.top = startY + 'px';
+      sel.style.width = '0px';
+      sel.style.height = '0px';
+      sel.style.display = 'block';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const curX = e.pageX;
+      const curY = e.pageY;
+      const left = Math.min(startX, curX);
+      const top = Math.min(startY, curY);
+      const w = Math.abs(curX - startX);
+      const h = Math.abs(curY - startY);
+      sel.style.left = left + 'px';
+      sel.style.top = top + 'px';
+      sel.style.width = w + 'px';
+      sel.style.height = h + 'px';
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      const endX = e.pageX;
+      const endY = e.pageY;
+      const left = Math.min(startX, endX);
+      const top = Math.min(startY, endY);
+      const width = Math.abs(endX - startX);
+      const height = Math.abs(endY - startY);
+
+      if (width <= 2 || height <= 2) {
+        // too small, cancel selection
+        reset();
+        return;
+      }
+
+      // send CSS pixel region relative to overlay window
+      ipcRenderer.send('region-selected', { x: left, y: top, width: width, height: height });
+    });
+
+    // allow cancel with Esc
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        ipcRenderer.send('selection-cancelled');
+      }
+    });
+
+    // ensure overlay receives focus to catch Esc
+    window.onload = () => { window.focus(); };
+
+  </script>
+</body>
+</html>
