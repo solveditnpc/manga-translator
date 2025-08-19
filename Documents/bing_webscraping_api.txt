@@ -1,0 +1,6 @@
+the bing api provides uncesored text, and leaves it to the developer to filter out any unwanted content
+on the other hand web scraping bing translator - it gives out censore words for eg 
+"what the f**k"  # partial for certain words 
+"what the"       # more profound words are removed 
+"what the ****"  # sometimes it chooses complete censorship
+which is a problem for the web scrapers 
