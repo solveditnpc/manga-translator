@@ -1,129 +1,122 @@
-// main.js
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const screenshot = require('screenshot-desktop');
 const sharp = require('sharp');
-// const axios = require('axios');
-// const FormData = require('form-data');
 const fs = require('fs');
 
-let overlayWindow;
+// Renamed for clarity, as this window now controls both states
+let controlWindow;
 
-function createOverlayWindow() {
-  const displays = screen.getAllDisplays();
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  displays.forEach(d => {
-    minX = Math.min(minX, d.bounds.x);
-    minY = Math.min(minY, d.bounds.y);
-    maxX = Math.max(maxX, d.bounds.x + d.bounds.width);
-    maxY = Math.max(maxY, d.bounds.y + d.bounds.height);
-  });
-  const width = maxX - minX;
-  const height = maxY - minY;
+// ## This is the correct function to call on startup ##
+function createStarterWindow() {
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth } = primaryDisplay.bounds;
 
-  overlayWindow = new BrowserWindow({
-    x: minX,
-    y: minY,
-    width,
-    height,
+  const starterWidth = 160;
+  const starterHeight = 50;
+
+  controlWindow = new BrowserWindow({
+    // Position the window at the top-middle of the screen
+    x: Math.round((screenWidth - starterWidth) / 2),
+    y: 20,
+    width: starterWidth,
+    height: starterHeight,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
+     backgroundColor: '#00000000',
     skipTaskbar: true,
-    focusable: true,
     resizable: false,
-    movable: false,
-    hasShadow: false,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
-    }
+      contextIsolation: false,
+    },
   });
 
-  overlayWindow.setIgnoreMouseEvents(false);
-  overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
+  
+
+  // Load the starter.html file first
+  controlWindow.loadFile(path.join(__dirname, 'starter.html'));
 }
 
-app.whenReady().then(() => {
-  createOverlayWindow();
+// ✨ FIX: Call the correct function when the app is ready
+app.whenReady().then(createStarterWindow);
 
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createOverlayWindow();
+
+// ## Listener: Switches from 'Start' button to full overlay ##
+ipcMain.on('start-capture', () => {
+  if (!controlWindow) return;
+
+
+
+
+  const { width, height } = screen.getPrimaryDisplay().bounds;
+  
+  // 2. Do all the resizing and loading while the window is hidden
+  controlWindow.setIgnoreMouseEvents(false);
+  controlWindow.setBounds({ x: 0, y: 0, width, height });
+  controlWindow.loadFile(path.join(__dirname, 'overlay.html'));
+
+});
+
+
+// ## Listener: Switches from full overlay back to 'Start' button ##
+ipcMain.on('return-to-starter', () => {
+  if (!controlWindow) return;
+  const { width: screenWidth } = screen.getPrimaryDisplay().bounds;
+  const starterWidth = 200;
+  const starterHeight = 60;
+
+  controlWindow.setBounds({
+    x: Math.round((screenWidth - starterWidth) / 2),
+    y: 20,
+    width: starterWidth,
+    height: starterHeight,
   });
+  controlWindow.loadFile(path.join(__dirname, 'starter.html'));
 });
 
-app.on('window-all-closed', () => {
-  app.quit();
-});
 
-ipcMain.on('region-selected', async (event, region) => {
+// ## The screenshot logic (no changes needed here) ##
+ipcMain.on('region-selected', async (event, { region, id }) => {
+  if (!controlWindow) return;
+
+  const inputDir = path.join(__dirname, 'input');
+  if (!fs.existsSync(inputDir)) fs.mkdirSync(inputDir);
+  const capturePath = path.join(inputDir, `capture_${id}.png`);
+
   try {
-    if (!overlayWindow) return;
-
-    const overlayBounds = overlayWindow.getBounds();
-    const absX = overlayBounds.x + region.x;
-    const absY = overlayBounds.y + region.y;
-
-    const pointDisplay = screen.getDisplayNearestPoint({ x: absX, y: absY });
+    const fullScreenBuffer = await screenshot({ format: 'png' });
+    const pointDisplay = screen.getDisplayNearestPoint({ x: region.x, y: region.y });
     const scaleFactor = pointDisplay.scaleFactor || 1;
+    
+    await sharp(fullScreenBuffer)
+      .extract({
+        left: Math.round(region.x * scaleFactor),
+        top: Math.round(region.y * scaleFactor),
+        width: Math.round(region.width * scaleFactor),
+        height: Math.round(region.height * scaleFactor),
+      })
+      .toFile(capturePath);
+    
+    console.log('Saved snippet to:', capturePath);
 
-    overlayWindow.hide();
-    await new Promise(r => setTimeout(r, 140));
+    const outputDir = path.join(__dirname, 'output');
+    const translatedImagePath = path.join(outputDir, 'Page.png');
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-    const imgBuffer = await screenshot({ format: 'png' });
-
-    const leftPx = Math.round(absX * scaleFactor);
-    const topPx = Math.round(absY * scaleFactor);
-    const widthPx = Math.round(region.width * scaleFactor);
-    const heightPx = Math.round(region.height * scaleFactor);
-
-    const meta = await sharp(imgBuffer).metadata();
-    const imgW = meta.width;
-    const imgH = meta.height;
-
-    const L = Math.max(0, Math.min(leftPx, imgW - 1));
-    const T = Math.max(0, Math.min(topPx, imgH - 1));
-    const W = Math.max(1, Math.min(widthPx, imgW - L));
-    const H = Math.max(1, Math.min(heightPx, imgH - T));
-
-    const croppedBuffer = await sharp(imgBuffer)
-      .extract({ left: L, top: T, width: W, height: H })
-      .jpeg({ quality: 85 })
-      .toBuffer();
-
-    // Save locally instead of uploading
-    const saveDir = path.join(__dirname, 'captures');
-    if (!fs.existsSync(saveDir)) {
-      fs.mkdirSync(saveDir);
+    if (fs.existsSync(translatedImagePath)) {
+      controlWindow.webContents.send('translation-complete', {
+        id: id,
+        originalRegion: region,
+        translatedImagePath: translatedImagePath,
+      });
+    } else {
+      console.error(`Mock translation not found at: ${translatedImagePath}`);
     }
-    const filePath = path.join(saveDir, `capture_${Date.now()}.jpg`);
-    await fs.promises.writeFile(filePath, croppedBuffer);
-    console.log('Saved capture to:', filePath);
 
-    /*
-    // Backend upload 
-    const form = new FormData();
-    form.append('file', croppedBuffer, {
-      filename: 'capture.jpg',
-      contentType: 'image/jpeg'
-    });
-
-    const uploadUrl = 'https://your-backend.com/upload';
-    const response = await axios.post(uploadUrl, form, {
-      headers: form.getHeaders(),
-      maxBodyLength: Infinity
-    });
-    console.log('Upload response status:', response.status);
-    */
-
-    overlayWindow.close();
   } catch (err) {
-    console.error('Error capturing/saving region:', err);
-    try { overlayWindow.show(); } catch(e) {}
+    console.error('Error in region-selected process:', err);
   }
-});
-
-ipcMain.on('selection-cancelled', () => {
-  console.log("No screenshot was taken");
-  try { overlayWindow.close(); } catch (e) {}
 });
