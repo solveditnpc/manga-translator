@@ -2,62 +2,58 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Selection Overlay</title>
+  <title>Live Translation Overlay</title>
   <style>
     html, body {
       height: 100%;
       width: 100%;
       margin: 0;
-      background: rgba(0,0,0,0.18); /* slight dim to indicate selection mode */
+      background: rgba(0,0,0,0);
       cursor: crosshair;
       user-select: none;
-      -webkit-user-select: none;
     }
     #selection {
       position: absolute;
-      border: 2px dashed #00aaff;
-      background: rgba(0,170,255,0.15);
+      border: 1px solid #00aaff;
+      background: rgba(0,0,0,0);
       display: none;
-      box-sizing: border-box;
     }
-    #hint {
-      position: fixed;
-      left: 10px;
-      top: 10px;
+    #previews-container {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; /* Allows clicks to pass through */
+    }
+    .preview-image {
+      position: absolute;
+      border: 1px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    .loading-indicator {
+      position: absolute;
       color: white;
+      background: rgba(0,0,0,0.5);
+      padding: 5px;
+      border-radius: 3px;
       font-family: sans-serif;
-      background: rgba(0,0,0,0.4);
-      padding: 6px 8px;
-      border-radius: 4px;
-      font-size: 13px;
+      font-size: 12px;
     }
   </style>
 </head>
 <body>
-  <div id="hint">Drag to select. Press Esc to cancel.</div>
   <div id="selection"></div>
+  <div id="previews-container"></div>
 
   <script>
     const { ipcRenderer } = require('electron');
 
     const sel = document.getElementById('selection');
-    let startX = null, startY = null;
-    let dragging = false;
+    const previewsContainer = document.getElementById('previews-container');
+    let startX = 0, startY = 0, isDragging = false;
 
-    function reset() {
-      sel.style.display = 'none';
-      sel.style.width = '0px';
-      sel.style.height = '0px';
-      sel.style.left = '0px';
-      sel.style.top = '0px';
-      startX = startY = null;
-      dragging = false;
-    }
-
+    // --- Selection Logic ---
     document.addEventListener('mousedown', (e) => {
-      // left button only
-      if (e.button !== 0) return;
-      dragging = true;
+      isDragging = true;
       startX = e.pageX;
       startY = e.pageY;
       sel.style.left = startX + 'px';
@@ -68,49 +64,68 @@
     });
 
     document.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      const curX = e.pageX;
-      const curY = e.pageY;
-      const left = Math.min(startX, curX);
-      const top = Math.min(startY, curY);
-      const w = Math.abs(curX - startX);
-      const h = Math.abs(curY - startY);
-      sel.style.left = left + 'px';
-      sel.style.top = top + 'px';
-      sel.style.width = w + 'px';
-      sel.style.height = h + 'px';
+      if (!isDragging) return;
+      sel.style.left = Math.min(startX, e.pageX) + 'px';
+      sel.style.top = Math.min(startY, e.pageY) + 'px';
+      sel.style.width = Math.abs(e.pageX - startX) + 'px';
+      sel.style.height = Math.abs(e.pageY - startY) + 'px';
     });
 
     document.addEventListener('mouseup', (e) => {
-      if (!dragging) return;
-      dragging = false;
-      const endX = e.pageX;
-      const endY = e.pageY;
-      const left = Math.min(startX, endX);
-      const top = Math.min(startY, endY);
-      const width = Math.abs(endX - startX);
-      const height = Math.abs(endY - startY);
+      if (!isDragging) return;
+      isDragging = false;
+      sel.style.display = 'none';
 
-      if (width <= 2 || height <= 2) {
-        // too small, cancel selection
-        reset();
-        return;
-      }
+      const region = {
+        x: parseInt(sel.style.left, 10),
+        y: parseInt(sel.style.top, 10),
+        width: parseInt(sel.style.width, 10),
+        height: parseInt(sel.style.height, 10),
+      };
 
-      // send CSS pixel region relative to overlay window
-      ipcRenderer.send('region-selected', { x: left, y: top, width: width, height: height });
+      if (region.width < 5 || region.height < 5) return;
+
+      const captureId = `capture_${Date.now()}`;
+      
+      // Show a temporary loading indicator
+      const loading = document.createElement('div');
+      loading.id = `loading_${captureId}`;
+      loading.className = 'loading-indicator';
+      loading.textContent = 'Translating...';
+      loading.style.left = region.x + 'px';
+      loading.style.top = region.y + 'px';
+      previewsContainer.appendChild(loading);
+
+      // Send region to main process
+      ipcRenderer.send('region-selected', { region, id: captureId });
     });
 
-    // allow cancel with Esc
+    // --- Listen for completed translations ---
+    ipcRenderer.on('translation-complete', (event, { id, originalRegion, translatedImagePath }) => {
+      // Remove the loading indicator
+      const loading = document.getElementById(`loading_${id}`);
+      if (loading) loading.remove();
+
+      // Create a new image element for the translated text
+      const newImg = document.createElement('img');
+      newImg.src = translatedImagePath;
+      newImg.className = 'preview-image';
+      
+      // Position it exactly where the original text was
+      newImg.style.left = originalRegion.x + 'px';
+      newImg.style.top = originalRegion.y + 'px';
+      newImg.style.width = originalRegion.width + 'px';
+      newImg.style.height = originalRegion.height + 'px';
+
+      previewsContainer.appendChild(newImg);
+    });
+
+    // Press 'Esc' to close the entire application
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        ipcRenderer.send('selection-cancelled');
+        ipcRenderer.send('return-to-starter');
       }
     });
-
-    // ensure overlay receives focus to catch Esc
-    window.onload = () => { window.focus(); };
-
   </script>
 </body>
 </html>
